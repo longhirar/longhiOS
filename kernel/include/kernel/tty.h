@@ -7,5 +7,8 @@ void terminal_initialize(void);
 void terminal_putchar(char c);
 void terminal_write(const char* data, size_t size);
 void terminal_writestring(const char* data);
-
+void terminal_infocolor(void);
+void terminal_warncolor(void);
+void terminal_errcolor(void);
+void terminal_paniccolor(void);
 #endif

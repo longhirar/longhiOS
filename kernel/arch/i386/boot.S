@@ -26,10 +26,15 @@ stack_top:
 _start:
 	movl $stack_top, %esp
 
+	# load memory map provided by bootloader into stack
+	push %eax
+	push %ebx
+
 	# Call the global constructors.
 	call _init
 
 	# Transfer control to the main kernel.
+	
 	call kernel_main
 
 	# Hang if kernel_main unexpectedly returns.

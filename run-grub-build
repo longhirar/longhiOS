@@ -1,3 +1,0 @@
-#!bash
-
-qemu-system-i386 -cdrom grub-build/longhiOS.iso

@@ -1,8 +1,0 @@
-#!bash
-set -e
-. ./headers.sh
-
-mkdir -p $SYSROOT/boot/grub
-cp ./grub-build/grub.cfg $SYSROOT/boot/grub/grub.cfg
-grub-mkrescue -o ./grub-build/longhiOS.iso $SYSROOT
-
