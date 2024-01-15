@@ -1,9 +1,18 @@
 #ifndef _KERNEL_TTY_H
 #define _KERNEL_TTY_H
 
+#include <stdint.h>
 #include <stddef.h>
+#include <kernel/multiboot.h>
 
-void terminal_initialize(void);
+struct pixel {
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+    uint8_t alpha;
+};
+
+void terminal_initialize(multiboot_info_t* mbd);
 void terminal_putchar(char c);
 void terminal_write(const char* data, size_t size);
 void terminal_writestring(const char* data);
