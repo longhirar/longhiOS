@@ -3,7 +3,7 @@
 
 
 #include <kernel/tty.h>
-#include <kernel/multiboot.h>
+#include <kernel/multiboot2.h>
 #include <cpuid.h>
 
 void panic(char* msg) {
@@ -11,41 +11,73 @@ void panic(char* msg) {
 	printf("\nKERNEL PANIC!\nkernel: %s\n", msg);
 }
 
-void kernel_main(multiboot_info_t* mbd, unsigned int magic) {
-	terminal_initialize(mbd);
+void kernel_main(unsigned long mb_tags_addr, unsigned long magic, unsigned long font_data_addr) {
+	struct multiboot_tag *tag;
+	unsigned size;
+
+	// first loop just to find the framebuffer tag
+	size = *(unsigned *) mb_tags_addr;
+	for (tag = (struct multiboot_tag*) (mb_tags_addr + 8);
+		tag->type != MULTIBOOT_TAG_TYPE_END;
+		tag = (struct multiboot_tag* ) ((multiboot_uint8_t *) tag + ((tag->size + 7) & ~7))
+	) {
+		printf("kernel (fb pass): Tag 0x%x | Size 0x%x\n", tag->type, tag->size);
+		switch(tag->type) {
+			case MULTIBOOT_TAG_TYPE_FRAMEBUFFER: {
+				printf("kernel: found framebuffer\n");
+
+				struct multiboot_tag_framebuffer* fb = (struct multiboot_tag_framebuffer*) tag;
+
+				terminal_initialize(fb, font_data_addr);
+				break;
+			}
+			default: {
+			}
+		}
+	}
+
+	// then second loop for everything else
+	// yes this is inefficient
+	// but i wanna see the logs 
+	size = *(unsigned *) mb_tags_addr;
+	for (tag = (struct multiboot_tag*) (mb_tags_addr + 8);
+		tag->type != MULTIBOOT_TAG_TYPE_END;
+		tag = (struct multiboot_tag* ) ((multiboot_uint8_t *) tag + ((tag->size + 7) & ~7))
+	) {
+		printf("kernel: Tag 0x%x | Size 0x%x\n", tag->type, tag->size);
+		switch(tag->type) {
+			case MULTIBOOT_TAG_TYPE_CMDLINE: {
+				printf("kernel: cmdline: %s\n", ((struct multiboot_tag_string*) tag)->string);
+				break;
+			}
+			case MULTIBOOT_TAG_TYPE_BOOT_LOADER_NAME: {
+				printf("kernel: bootloader_name: %s\n", ((struct multiboot_tag_string*) tag)->string);
+				break;
+			}
+			case MULTIBOOT_TAG_TYPE_FRAMEBUFFER: {
+				// we already did this
+				break;
+			}
+			default: {
+			}
+		}
+	}
+
 	terminal_warncolor();
 	printf("longhiOS 0.1\n");
 	terminal_infocolor();
 	printf("kernel: kernel_main\n");
-	printf("kernel: cmdline: %s\n", mbd->cmdline);
+	printf("kernel: font data addr %x\n", font_data_addr);
 
-	if(!mbd->flags >> 6 & 0x01)
-		panic("invalid memory map given by bootloader.");
-
-    printf("kernel: multiboot framebuffer: %x %xx%x \n", mbd->framebuffer_addr, mbd->framebuffer_width, mbd->framebuffer_height);
-
-
-    printf("kernel mmap_length: %d", mbd->mmap_length);
 	int i;
-	for (i = 0; i < mbd->mmap_length; i += sizeof(multiboot_memory_map_t)) {
-        multiboot_memory_map_t* mmmt = (multiboot_memory_map_t*)(mbd->mmap_addr + i);
-
-		char types[5][16] = {
-            "AVAILABLE",
-            "RESERVED",
-            "ACPI RECLAIMABLE",
-            "NVS",
-            "BAD RAM"
-        };
-		
-        
-        printf("kernel memmap: addr %x | size %x | len %x | type %d \n", mmmt->addr, mmmt->size, mmmt->len, mmmt->type);
-
+	for (int i = 640; i < 656; i++) {
+        printf("%x ", ((unsigned char*)font_data_addr)[i]);
     }
+	printf("\n");
+	
+	printf("kernel: test print A\n\n");
 
-	putchar(0xFF);
+	
 
-	if(true)
-		panic("reached the end of the kernel!");
 }
 

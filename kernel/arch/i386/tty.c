@@ -1,11 +1,13 @@
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <kernel/tty.h>
-#include <kernel/multiboot.h>
-#include <kernel/font8x8.h>
+#include <kernel/multiboot2.h>
 
-const multiboot_info_t* mbd;
+static struct multiboot_tag_framebuffer* fb;
+static struct multiboot_tag_framebuffer_common* fbc;
 
+static size_t font_data_addr;
 static size_t terminal_row;
 static size_t terminal_column;
 static size_t terminal_width;
@@ -15,8 +17,8 @@ static struct pixel terminal_bgcolor;
 
 struct pixel* get_pixel(uint32_t x, uint32_t y) {
     // Assuming 32 bits per pixel (4 bytes)
-    uint32_t pixels_per_row = mbd->framebuffer_width;
-    return (struct pixel*)(mbd->framebuffer_addr + (y * pixels_per_row + x) * sizeof(struct pixel));
+    uint32_t pixels_per_row = fbc->framebuffer_width;
+    return (struct pixel*)(fbc->framebuffer_addr + (y * pixels_per_row + x) * sizeof(struct pixel));
 }
 
 void putpixel(struct pixel* pxin, int x, int y) {
@@ -27,8 +29,9 @@ void putpixel(struct pixel* pxin, int x, int y) {
     px->alpha   = pxin->alpha;
 }
 
-void terminal_initialize(multiboot_info_t* _mbd) {
-    mbd = _mbd;
+void terminal_initialize(struct multiboot_tag_framebuffer* fb, unsigned long _font_data_addr) {
+    fbc = &fb->common;
+    font_data_addr = _font_data_addr;
 
     terminal_bgcolor.red   = 0;
     terminal_bgcolor.green = 0;
@@ -39,24 +42,20 @@ void terminal_initialize(multiboot_info_t* _mbd) {
     terminal_fgcolor.green = 255;
     terminal_fgcolor.blue  = 255;
     terminal_fgcolor.alpha = 255;
-
-    if ((mbd->flags >> 12 & 0x01) != 0x01) {
-        //panic("No framebuffer available!");
-    }
     
-    if (mbd->framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_INDEXED) {
+    if (fbc->framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_INDEXED) {
         // TODO: implement indexed framebuffer type
         // panic("Indexed Color Not Implemented");
-    } else if (mbd->framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_RGB) {
+    } else if (fbc->framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_RGB) {
         terminal_column = 0;
         terminal_row = 0;
-        terminal_width = mbd->framebuffer_width / 8;    // font size
-        terminal_height = mbd->framebuffer_height / 8;  // font size
+        terminal_width = fbc->framebuffer_width / 8;    // font size
+        terminal_height = fbc->framebuffer_height / 8;  // font size
 
-        if (mbd->framebuffer_addr != 0) {
+        if (fbc->framebuffer_addr != 0) {
             // Fill the screen with a horizontal gradient
-            uint32_t width = mbd->framebuffer_width;
-            uint32_t height = mbd->framebuffer_height;
+            uint32_t width = fbc->framebuffer_width;
+            uint32_t height = fbc->framebuffer_height;
 
             for (uint32_t y = 0; y < height; ++y) {
                 for (uint32_t x = 0; x < width; ++x) {
@@ -71,7 +70,7 @@ void terminal_initialize(multiboot_info_t* _mbd) {
                 }
             }
         }
-    } else if (mbd->framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT) {
+    } else if (fbc->framebuffer_type == MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT) {
         // TODO: implement ega text framebuffer type
         // acctually no
         // fuck this
@@ -82,20 +81,34 @@ void terminal_initialize(multiboot_info_t* _mbd) {
     }
 }
 
-void terminal_drawchar(unsigned char c, int x, int y, struct pixel* fgcolor, struct pixel* bgcolor)
-{
-    x += 10;
-    y += 20;
-	int cx,cy;
-	int mask[8]={1,2,4,8,16,32,64,128};
-	unsigned char *glyph=font8x8_basic[c];
- 
-	for(cy=0;cy<8;cy++){
-		for(cx=0;cx<8;cx++){
-			putpixel(glyph[cy]&mask[cx]?fgcolor:bgcolor,x+cx,y+cy-12);
-		}
-	}
+void terminal_drawchar(unsigned long c, int x, int y, struct pixel* fgcolor, struct pixel* bgcolor) {
+    c -= 32;
+    // Each character is 16x32 with 8bpp, so each row of pixels is 16 bytes
+    int charWidth = 8;
+    int charHeight = 16;
+    int bytesPerPixel = 1; // Assuming 8bpp
+
+    unsigned long offset = 0x80 /* 8 * 16 in hex */ * c;
+    // Iterate over each row of the character
+    for (int row = 0; row < charHeight; row++) {
+        // Iterate over each pixel in the row
+        for (int col = 0; col < charWidth; col++) {
+            // Calculate the offset for the current pixel in the font data
+            unsigned long pixelOffset = offset + row * charWidth * bytesPerPixel + col * bytesPerPixel;
+
+            // Extract the pixel values from font data
+            uint8_t pixelValue = (uint8_t)((unsigned char*)font_data_addr)[pixelOffset];
+
+            // Assuming a simple conversion from 8bpp to RGBA8888
+            struct pixel pixel = { pixelValue, pixelValue, pixelValue, 255 };
+
+            // Update the framebuffer using putpixel
+            putpixel(&pixel, x + col, y + row);
+        }
+    }
 }
+
+
 
 void terminal_putchar(char c) {
 	unsigned char uc = c;
@@ -103,7 +116,7 @@ void terminal_putchar(char c) {
 		terminal_column = 0;
 		terminal_row++;
 	} else {
-		terminal_drawchar(uc, terminal_column*8, terminal_row*8, &terminal_fgcolor, &terminal_bgcolor);
+		terminal_drawchar(uc, terminal_column*8, terminal_row*16, &terminal_fgcolor, &terminal_bgcolor);
 		if (++terminal_column == terminal_width) {
 			terminal_column = 0;
 			if (++terminal_row == terminal_width)
