@@ -1,30 +1,26 @@
-# Declare constants for the multiboot header.
-.set ALIGN,    1<<0             # align loaded modules on page boundaries
-.set MEMINFO,  1<<1             # provide memory map
-.set FRAMEBUF, 1<<2				# provide framebuffer
-.set FLAGS,    ALIGN | MEMINFO | FRAMEBUF # this is the Multiboot 'flag' field
-.set MAGIC,    0x1BADB002       # 'magic number' lets bootloader find the header
-.set CHECKSUM, -(MAGIC + FLAGS) # checksum of above, to prove we are multiboot
-.set MODE_TYPE, 0				# linear graphics mode
-.set WIDTH,		1600			# width (in px) of framebuff
-.set HEIGHT, 	900				# height (in px)
-.set DEPTH, 	32				# bits per pixel
+#define ASM_FILE 1
+#include <kernel/multiboot2.h>
 
 # Declare a header as in the Multiboot Standard.
-.section .multiboot
-.align 4
-.long MAGIC
-.long FLAGS
-.long CHECKSUM
-.long 0 # header_addr 	(disabled)
-.long 0 # load_addr 	(disabled)
-.long 0 # load_end_addr (disabled)
-.long 0 # bss_end_addr 	(disabled)
-.long 0 # entry_addr 	(disabled)
-.long MODE_TYPE
-.long WIDTH
-.long HEIGHT
-.long DEPTH
+.section .multiboot2
+.align 8
+multiboot2_header:
+	.long MULTIBOOT2_HEADER_MAGIC 																		# magic
+	.long MULTIBOOT_ARCHITECTURE_I386 																# architecture
+	.long multiboot2_header_end - multiboot2_header																  		# header_length
+	.long -(MULTIBOOT2_HEADER_MAGIC + MULTIBOOT_ARCHITECTURE_I386 + (multiboot2_header_end - multiboot2_header))  	# checksum
+framebuffer_tag:  
+        .short MULTIBOOT_HEADER_TAG_FRAMEBUFFER
+        .short 0 # not optional :)
+        .long framebuffer_tag_end - framebuffer_tag
+        .long 1600
+        .long 900
+        .long 32
+framebuffer_tag_end:
+        .short MULTIBOOT_HEADER_TAG_END
+        .short 0
+        .long 0
+multiboot2_header_end:
 
 # Reserve a stack for the initial thread.
 .section .bss
@@ -41,6 +37,7 @@ _start:
 	movl $stack_top, %esp
 
 	# load memory map provided by bootloader into stack
+	push $font_data
 	push %eax
 	push %ebx
 
@@ -48,11 +45,20 @@ _start:
 	call _init
 
 	# Transfer control to the main kernel.
-	
 	call kernel_main
 
 	# Hang if kernel_main unexpectedly returns.
+	pushl $halt_message
+	call printf
+
 	cli
 1:	hlt
 	jmp 1b
 .size _start, . - _start
+
+halt_message:
+	.asciz "Halt!!"
+
+.section .rodata
+font_data:
+.incbin "8x16.font"
